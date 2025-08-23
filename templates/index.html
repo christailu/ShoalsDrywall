@@ -1,0 +1,48 @@
+<!<!DOCTYPE html>
+<html>
+<head>
+    <title>Employee Dashboard</title>
+    <style>
+        table { border-collapse: collapse; width: 80%; margin: auto; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #f2f2f2; }
+        button { padding: 10px 20px; margin: 10px; }
+        body { font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <h1>Welcome, {{ username }}!</h1>
+    <form method="POST">
+        <button name="action" value="Clock In">Clock In</button>
+        <button name="action" value="Clock Out">Clock Out</button>
+    </form>
+
+    <h2>Your Work Sessions</h2>
+    <table>
+        <tr>
+            <th>Day</th>
+            <th>Clock In</th>
+            <th>Clock Out</th>
+            <th>Hours</th>
+            <th>Gross Pay</th>
+            <th>Tax ($20)</th>
+            <th>Net Pay</th>
+        </tr>
+        {% for s in sessions %}
+        <tr>
+            <td>{{ s.day }}</td>
+            <td>{{ s.clock_in }}</td>
+            <td>{{ s.clock_out }}</td>
+            <td>{{ s.hours }}</td>
+            <td>${{ s.gross_pay }}</td>
+            <td>${{ s.tax }}</td>
+            <td>${{ s.net_pay }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <p><a href="{{ url_for('logout') }}">Logout</a></p>
+</body>
+</html>
+
+

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <style>
+        table { border-collapse: collapse; width: 90%; margin: auto; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        th { background-color: #f2f2f2; }
+        button { padding: 10px 20px; margin: 10px; }
+        body { font-family: Arial, sans-serif; }
+    </style>
+</head>
+<body>
+    <h1>Admin Dashboard</h1>
+    <p><a href="{{ url_for('export_excel') }}"><button>Export to Excel</button></a></p>
+    <table>
+        <tr>
+            <th>Employee</th>
+            <th>Day</th>
+            <th>Clock In</th>
+            <th>Clock Out</th>
+            <th>Hours</th>
+            <th>Gross Pay</th>
+            <th>Tax ($20)</th>
+            <th>Net Pay</th>
+        </tr>
+        {% for s in logs %}
+        <tr>
+            <td>{{ s.username }}</td>
+            <td>{{ s.day }}</td>
+            <td>{{ s.clock_in }}</td>
+            <td>{{ s.clock_out }}</td>
+            <td>{{ s.hours }}</td>
+            <td>${{ s.gross_pay }}</td>
+            <td>${{ s.tax }}</td>
+            <td>${{ s.net_pay }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    <p><a href="{{ url_for('logout') }}">Logout</a></p>
+</body>
+</html>
+
+
