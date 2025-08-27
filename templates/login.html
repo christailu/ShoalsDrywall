@@ -2,14 +2,32 @@
 <html>
 <head>
     <title>Login - Payroll Clock</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#317EFB">
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker
+      .register("/static/service-worker.js")
+      .then(() => console.log("Service Worker Registered"));
+  }
+</script>
+
 </head>
-<body>
-    <h1>Login</h1>
-    <form method="POST">
-        <input type="text" name="username" placeholder="Username" required>
-        <input type="password" name="password" placeholder="Password" required>
-        <button type="submit">Login</button>
-    </form>
-    <p>No account? <a href="/register">Register here</a></p>
+<body class="d-flex align-items-center justify-content-center vh-100 bg-light">
+    <div class="card shadow p-4" style="max-width: 400px; width: 100%;">
+        <h3 class="text-center mb-4">Payroll Login</h3>
+        <form method="POST">
+            <div class="mb-3">
+                <input type="text" class="form-control" name="username" placeholder="Username" required>
+            </div>
+            <div class="mb-3">
+                <input type="password" class="form-control" name="password" placeholder="Password" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Login</button>
+        </form>
+    </div>
 </body>
 </html>
+
