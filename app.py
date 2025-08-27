@@ -13,6 +13,7 @@ EMPLOYEES = {
     "Alexander Merida": {"rate": 22, "password": "alex123"},
     "Kevin": {"rate": 18, "password": "kevin123"},
     "Eddy": {"rate": 18, "password": "eddy123"},
+    "Ousmane": {"rate": 18, "password": "admin123"},
     "Bocho": {"rate": 18, "password": "bocho123"},
     "Marvin": {"rate": 18, "password": "marvin123"},
     "Zacarias": {"rate": 18, "password": "zacarias123"},
