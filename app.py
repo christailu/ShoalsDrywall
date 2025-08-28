@@ -62,11 +62,11 @@ def seed_users():
 def format_session(clock_in, clock_out, hours, wage):
     TAX_FLAT = 20
     in_dt = datetime.datetime.fromisoformat(clock_in)
-    clock_in_str = in_dt.strftime("%H:%M on %m/%d/%Y")
+    clock_in_str = in_dt.strftime("%I:%M %p on %m/%d/%Y")
     day = in_dt.strftime("%A")
     if clock_out:
         out_dt = datetime.datetime.fromisoformat(clock_out)
-        clock_out_str = out_dt.strftime("%H:%M on %m/%d/%Y")
+        clock_out_str = out_dt.strftime("%I:%M %p on %m/%d/%Y")
     else:
         clock_out_str = "-"
     hours = round(hours, 2) if hours else 0
@@ -143,27 +143,71 @@ def index():
     raw_sessions = c.fetchall()
     conn.close()
     sessions = [format_session(*s) for s in raw_sessions]
+    # Calculate totals for all employees
+
     return render_template("index.html", sessions=sessions, username=session["username"])
+
+# --- Admin dashboard ---
+
 
 # --- Admin dashboard ---
 @app.route("/admin")
 def admin_dashboard():
     if "user_id" not in session or session.get("role") != "admin":
         return "Access denied. Admins only.", 403
+
     conn = sqlite3.connect("payroll.db")
     c = conn.cursor()
     c.execute("""SELECT u.username, w.clock_in, w.clock_out, w.hours, w.wage
                  FROM work_sessions w
                  JOIN users u ON w.user_id = u.id
-                 ORDER BY w.clock_in DESC""")
+                 ORDER BY w.clock_in ASC""")
     raw_logs = c.fetchall()
     conn.close()
-    logs = []
-    for r in raw_logs:
-        log = format_session(r[1], r[2], r[3], r[4])
-        log["username"] = r[0]
-        logs.append(log)
-    return render_template("admin.html", logs=logs)
+
+    # Structure: { employee: { day: [...entries...], "Total": {...} } }
+    data = {}
+    days_of_week = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    TAX_FLAT = 20
+
+    # Initialize all employees even if no work
+    for employee in EMPLOYEES.keys():
+        data[employee] = {d: [] for d in days_of_week}
+        data[employee]["Total"] = {"hours": 0, "gross": 0, "net": 0}
+
+    for username, clock_in, clock_out, hours, wage in raw_logs:
+        if not clock_in:
+            continue
+        in_dt = datetime.datetime.fromisoformat(clock_in)
+        day = in_dt.strftime("%A")
+
+        # Prepare daily entry
+        entry = {
+            "time": f"{in_dt.strftime('%I:%M %p')} - {datetime.datetime.fromisoformat(clock_out).strftime('%I:%M %p') if clock_out else '-'}",
+            "hours": round(hours, 2) if hours else 0,
+            "gross": round(wage, 2) if wage else 0
+        }
+
+        data[username][day].append(entry)
+
+        # Update weekly totals
+        data[username]["Total"]["hours"] += entry["hours"]
+        data[username]["Total"]["gross"] += entry["gross"]
+
+    # Calculate net pay for the week
+    for user in data:
+        total_gross = data[user]["Total"]["gross"]
+        data[user]["Total"]["gross"] = round(total_gross, 2)
+        data[user]["Total"]["hours"] = round(data[user]["Total"]["hours"], 2)
+        data[user]["Total"]["net"] = round(max(total_gross - TAX_FLAT, 0), 2)
+
+    total_gross_all = sum(data[user]["Total"]["gross"] for user in data)
+    total_net_all = sum(data[user]["Total"]["net"] for user in data)
+
+    return render_template("admin.html", data=data, days=days_of_week,
+                           total_gross_all=round(total_gross_all, 2),
+                           total_net_all=round(total_net_all, 2))
+
 
 # --- Export Excel ---
 @app.route("/export")
