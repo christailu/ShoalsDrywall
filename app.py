@@ -147,7 +147,6 @@ def index():
 
     return render_template("index.html", sessions=sessions, username=session["username"])
 
-# --- Admin dashboard ---
 
 
 # --- Admin dashboard ---
@@ -207,6 +206,19 @@ def admin_dashboard():
     return render_template("admin.html", data=data, days=days_of_week,
                            total_gross_all=round(total_gross_all, 2),
                            total_net_all=round(total_net_all, 2))
+# --- Reset database for new week ---
+@app.route("/reset", methods=["POST"])
+def reset_db():
+    if "user_id" not in session or session.get("role") != "admin":
+        return "Access denied. Admins only.", 403
+
+    conn = sqlite3.connect("payroll.db")
+    c = conn.cursor()
+    # Delete all work sessions
+    c.execute("DELETE FROM work_sessions")
+    conn.commit()
+    conn.close()
+    return redirect(url_for("admin_dashboard"))
 
 
 # --- Export Excel ---
