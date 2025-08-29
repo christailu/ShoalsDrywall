@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, session, url_for, send_file
 import sqlite3
 import datetime
+import pytz
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 import io
@@ -18,6 +19,9 @@ EMPLOYEES = {
     "Zacarias": {"rate": 18, "password": "zacarias123"},
     "Daniella Del Valle": {"rate": 17, "password": "daniella123"},
 }
+
+# Central Time zone (Alabama)
+CENTRAL_TZ = pytz.timezone("America/Chicago")
 
 # --- Database setup ---
 def init_db():
@@ -61,17 +65,22 @@ def seed_users():
 # --- Format session ---
 def format_session(clock_in, clock_out, hours, wage):
     TAX_FLAT = 20
-    in_dt = datetime.datetime.fromisoformat(clock_in)
+
+    # Convert UTC from DB -> Central Time
+    in_dt = datetime.fromisoformat(clock_in).astimezone(CENTRAL_TZ)
     clock_in_str = in_dt.strftime("%I:%M %p on %m/%d/%Y")
     day = in_dt.strftime("%A")
+
     if clock_out:
-        out_dt = datetime.datetime.fromisoformat(clock_out)
+        out_dt = datetime.fromisoformat(clock_out).astimezone(CENTRAL_TZ)
         clock_out_str = out_dt.strftime("%I:%M %p on %m/%d/%Y")
     else:
         clock_out_str = "-"
+
     hours = round(hours, 2) if hours else 0
     gross_pay = round(wage, 2) if wage else 0
     net_pay = round(max(gross_pay - TAX_FLAT, 0), 2)
+
     return {
         "day": day,
         "clock_in": clock_in_str,
@@ -120,14 +129,14 @@ def index():
         c = conn.cursor()
         if action == "Clock In":
             c.execute("INSERT INTO work_sessions (user_id, clock_in) VALUES (?, ?)",
-                      (user_id, datetime.datetime.now().isoformat()))
+                      (user_id, datetime.now(timezone.utc).isoformat()))
         elif action == "Clock Out":
             c.execute("SELECT id, clock_in FROM work_sessions WHERE user_id=? AND clock_out IS NULL",
                       (user_id,))
             row = c.fetchone()
             if row:
-                start_time = datetime.datetime.fromisoformat(row[1])
-                end_time = datetime.datetime.now()
+                start_time = datetime.fromisoformat(row[1])
+                end_time = datetime.now(timezone.utc)  # store UTC
                 hours = (end_time - start_time).total_seconds() / 3600
                 rate = EMPLOYEES.get(session["username"], {}).get("rate", 15)
                 wage = hours * rate
@@ -143,10 +152,10 @@ def index():
     raw_sessions = c.fetchall()
     conn.close()
     sessions = [format_session(*s) for s in raw_sessions]
-    # Calculate totals for all employees
 
     return render_template("index.html", sessions=sessions, username=session["username"])
 
+# --- Admin dashboard ---
 
 
 # --- Admin dashboard ---
@@ -164,62 +173,77 @@ def admin_dashboard():
     raw_logs = c.fetchall()
     conn.close()
 
-    # Structure: { employee: { day: [...entries...], "Total": {...} } }
-    data = {}
-    days_of_week = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
     TAX_FLAT = 20
+    weeks_data = {}  # {week_start_date: {employee: {days...}}}
 
-    # Initialize all employees even if no work
-    for employee in EMPLOYEES.keys():
-        data[employee] = {d: [] for d in days_of_week}
-        data[employee]["Total"] = {"hours": 0, "gross": 0, "net": 0}
+    # Get current Central date
+    now_central = datetime.datetime.now(datetime.timezone.utc).astimezone(CENTRAL_TZ)
+    # Find last Monday
+    start_of_week = now_central - datetime.timedelta(days=now_central.weekday())
+    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Collect last 4 weeks
+    week_starts = [(start_of_week - datetime.timedelta(weeks=i)) for i in range(4)]
+
+    for ws in week_starts:
+        week_key = ws.strftime("%Y-%m-%d")
+        weeks_data[week_key] = {}
+        for emp in EMPLOYEES.keys():
+            weeks_data[week_key][emp] = {d: [] for d in ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]}
+            weeks_data[week_key][emp]["Total"] = {"hours": 0, "gross": 0, "net": 0}
 
     for username, clock_in, clock_out, hours, wage in raw_logs:
         if not clock_in:
             continue
-        in_dt = datetime.datetime.fromisoformat(clock_in)
-        day = in_dt.strftime("%A")
+        in_dt = datetime.datetime.fromisoformat(clock_in).astimezone(CENTRAL_TZ)
 
-        # Prepare daily entry
-        entry = {
-            "time": f"{in_dt.strftime('%I:%M %p')} - {datetime.datetime.fromisoformat(clock_out).strftime('%I:%M %p') if clock_out else '-'}",
-            "hours": round(hours, 2) if hours else 0,
-            "gross": round(wage, 2) if wage else 0
-        }
+        # Determine which week this entry belongs to
+        for ws in week_starts:
+            we = ws + datetime.timedelta(days=7)
+            if ws <= in_dt < we:
+                week_key = ws.strftime("%Y-%m-%d")
+                day = in_dt.strftime("%A")
 
-        data[username][day].append(entry)
+                entry = {
+                    "time": f"{in_dt.strftime('%I:%M %p')} - {datetime.datetime.fromisoformat(clock_out).astimezone(CENTRAL_TZ).strftime('%I:%M %p') if clock_out else '-'}",
+                    "hours": round(hours, 2) if hours else 0,
+                    "gross": round(wage, 2) if wage else 0
+                }
 
-        # Update weekly totals
-        data[username]["Total"]["hours"] += entry["hours"]
-        data[username]["Total"]["gross"] += entry["gross"]
+                weeks_data[week_key][username][day].append(entry)
+                weeks_data[week_key][username]["Total"]["hours"] += entry["hours"]
+                weeks_data[week_key][username]["Total"]["gross"] += entry["gross"]
+                break
 
-    # Calculate net pay for the week
-    for user in data:
-        total_gross = data[user]["Total"]["gross"]
-        data[user]["Total"]["gross"] = round(total_gross, 2)
-        data[user]["Total"]["hours"] = round(data[user]["Total"]["hours"], 2)
-        data[user]["Total"]["net"] = round(max(total_gross - TAX_FLAT, 0), 2)
+    # Compute net
+    for wk, employees in weeks_data.items():
+        for emp in employees:
+            total_gross = employees[emp]["Total"]["gross"]
+            employees[emp]["Total"]["gross"] = round(total_gross, 2)
+            employees[emp]["Total"]["hours"] = round(employees[emp]["Total"]["hours"], 2)
+            employees[emp]["Total"]["net"] = round(max(total_gross - TAX_FLAT, 0), 2)
 
-    total_gross_all = sum(data[user]["Total"]["gross"] for user in data)
-    total_net_all = sum(data[user]["Total"]["net"] for user in data)
+    return render_template("admin.html", weeks_data=weeks_data,
+                           days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"])
 
-    return render_template("admin.html", data=data, days=days_of_week,
-                           total_gross_all=round(total_gross_all, 2),
-                           total_net_all=round(total_net_all, 2))
-# --- Reset database for new week ---
+# --- Reset database with PIN ---
+RESET_PIN = "2003"  # <-- you can change this
+
 @app.route("/reset", methods=["POST"])
 def reset_db():
     if "user_id" not in session or session.get("role") != "admin":
         return "Access denied. Admins only.", 403
 
+    pin = request.form.get("pin")
+    if pin != RESET_PIN:
+        return "Invalid PIN. Reset denied.", 403
+
     conn = sqlite3.connect("payroll.db")
     c = conn.cursor()
-    # Delete all work sessions
     c.execute("DELETE FROM work_sessions")
     conn.commit()
     conn.close()
     return redirect(url_for("admin_dashboard"))
-
 
 # --- Export Excel ---
 @app.route("/export")
@@ -234,11 +258,13 @@ def export_excel():
                  ORDER BY w.clock_in DESC""")
     raw_logs = c.fetchall()
     conn.close()
+
     data = []
     for r in raw_logs:
         log = format_session(r[1], r[2], r[3], r[4])
         log["username"] = r[0]
         data.append(log)
+
     df = pd.DataFrame(data)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -257,3 +283,4 @@ if __name__ == "__main__":
     init_db()
     seed_users()
     app.run(debug=True)
+
