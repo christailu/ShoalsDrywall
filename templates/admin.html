@@ -24,46 +24,64 @@
     </form>
 
     {% for week, data in weeks_data.items() %}
-        <h4 class="mt-4">Week of {{ week }}</h4>
-        <div class="table-responsive">
-            <table class="table table-bordered table-sm text-center align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>Employee</th>
-                        {% for day in days %}
-                            <th>{{ day[:3] }}</th>
-                        {% endfor %}
-                        <th>Total Hours</th>
-                        <th>Total Gross</th>
-                        <th>Net Pay (Week)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for employee, days_data in data.items() %}
-                    <tr>
-                        <td><strong>{{ employee }}</strong></td>
-                        {% for day in days %}
-                            <td>
-                                {% if days_data[day] %}
-                                    {% for entry in days_data[day] %}
-                                        {{ entry.time }}{% if not loop.last %}, {% endif %}
-                                    {% endfor %}
-                                    <br><strong>Hours:</strong> {{ days_data[day]|sum(attribute='hours') }}
-                                    <br><strong>Gross:</strong> ${{ days_data[day]|sum(attribute='gross') }}
-                                {% else %}
-                                    -
-                                {% endif %}
-                            </td>
-                        {% endfor %}
-                        <td>{{ days_data["Total"].hours }}</td>
-                        <td>${{ days_data["Total"].gross }}</td>
-                        <td>${{ days_data["Total"].net }}</td>
-                    </tr>
+    <h4 class="mt-4">Week of {{ week }}</h4>
+    <div class="table-responsive">
+        <table class="table table-bordered table-sm text-center align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Employee</th>
+                    {% for day in days %}
+                        <th>{{ day[:3] }}</th>
                     {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    {% endfor %}
+                    <th>Total Hours</th>
+                    <th>Total Gross</th>
+                    <th>Net Pay (Week)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% set week_hours = 0 %}
+                {% set week_gross = 0 %}
+                {% set week_net = 0 %}
+                {% for employee, days_data in data.items() %}
+                <tr>
+                    <td><strong>{{ employee }}</strong></td>
+                    {% for day in days %}
+                        <td>
+                            {% if days_data[day] %}
+                                {% for entry in days_data[day] %}
+                                    {{ entry.time }}{% if not loop.last %}, {% endif %}
+                                {% endfor %}
+                                <br><strong>Hours:</strong> {{ days_data[day]|sum(attribute='hours') }}
+                                <br><strong>Gross:</strong> ${{ days_data[day]|sum(attribute='gross') }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                    <td>{{ days_data["Total"].hours }}</td>
+                    <td>${{ days_data["Total"].gross }}</td>
+                    <td>${{ days_data["Total"].net }}</td>
+
+                    {% set week_hours = week_hours + days_data["Total"].hours %}
+                    {% set week_gross = week_gross + days_data["Total"].gross %}
+                    {% set week_net = week_net + days_data["Total"].net %}
+                </tr>
+                {% endfor %}
+                <!-- Grand total for the week -->
+                <tr class="table-secondary fw-bold">
+                    <td>Week Total</td>
+                    {% for day in days %}
+                        <td>-</td>
+                    {% endfor %}
+                    <td>{{ week_hours }}</td>
+                    <td>${{ week_gross }}</td>
+                    <td>${{ week_net }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+{% endfor %}
+
 
     <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary mt-3">Logout</a>
 </body>

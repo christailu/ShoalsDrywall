@@ -22,18 +22,17 @@ EMPLOYEES = {
 
 # Central Time zone (Alabama)
 CENTRAL_TZ = pytz.timezone("America/Chicago")
+TAX_FLAT = 20  # Flat tax per week
 
 # --- Database setup ---
 def init_db():
     conn = sqlite3.connect("payroll.db")
     c = conn.cursor()
-    # Users table
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (id INTEGER PRIMARY KEY,
                   username TEXT UNIQUE,
                   password TEXT,
                   role TEXT DEFAULT "employee")''')
-    # Work sessions table
     c.execute('''CREATE TABLE IF NOT EXISTS work_sessions
                  (id INTEGER PRIMARY KEY,
                   user_id INTEGER,
@@ -64,15 +63,12 @@ def seed_users():
 
 # --- Format session ---
 def format_session(clock_in, clock_out, hours, wage):
-    TAX_FLAT = 20
-
-    # Convert UTC from DB -> Central Time
-    in_dt = datetime.fromisoformat(clock_in).astimezone(CENTRAL_TZ)
+    in_dt = datetime.datetime.fromisoformat(clock_in).astimezone(CENTRAL_TZ)
     clock_in_str = in_dt.strftime("%I:%M %p on %m/%d/%Y")
     day = in_dt.strftime("%A")
 
     if clock_out:
-        out_dt = datetime.fromisoformat(clock_out).astimezone(CENTRAL_TZ)
+        out_dt = datetime.datetime.fromisoformat(clock_out).astimezone(CENTRAL_TZ)
         clock_out_str = out_dt.strftime("%I:%M %p on %m/%d/%Y")
     else:
         clock_out_str = "-"
@@ -107,8 +103,7 @@ def login():
             session["username"] = username
             session["role"] = user[2]
             return redirect("/")
-        else:
-            return render_template("invalid.html")
+        return render_template("invalid.html")
     return render_template("login.html")
 
 # --- Home ---
@@ -129,14 +124,14 @@ def index():
         c = conn.cursor()
         if action == "Clock In":
             c.execute("INSERT INTO work_sessions (user_id, clock_in) VALUES (?, ?)",
-                      (user_id, datetime.now(timezone.utc).isoformat()))
+                      (user_id, datetime.datetime.now(datetime.timezone.utc).isoformat()))
         elif action == "Clock Out":
             c.execute("SELECT id, clock_in FROM work_sessions WHERE user_id=? AND clock_out IS NULL",
                       (user_id,))
             row = c.fetchone()
             if row:
-                start_time = datetime.fromisoformat(row[1])
-                end_time = datetime.now(timezone.utc)  # store UTC
+                start_time = datetime.datetime.fromisoformat(row[1])
+                end_time = datetime.datetime.now(datetime.timezone.utc)
                 hours = (end_time - start_time).total_seconds() / 3600
                 rate = EMPLOYEES.get(session["username"], {}).get("rate", 15)
                 wage = hours * rate
@@ -156,9 +151,6 @@ def index():
     return render_template("index.html", sessions=sessions, username=session["username"])
 
 # --- Admin dashboard ---
-
-
-# --- Admin dashboard ---
 @app.route("/admin")
 def admin_dashboard():
     if "user_id" not in session or session.get("role") != "admin":
@@ -173,61 +165,57 @@ def admin_dashboard():
     raw_logs = c.fetchall()
     conn.close()
 
-    TAX_FLAT = 20
-    weeks_data = {}  # {week_start_date: {employee: {days...}}}
-
-    # Get current Central date
+    # Determine all weeks forward
     now_central = datetime.datetime.now(datetime.timezone.utc).astimezone(CENTRAL_TZ)
-    # Find last Monday
     start_of_week = now_central - datetime.timedelta(days=now_central.weekday())
     start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # Collect last 4 weeks
-    week_starts = [(start_of_week - datetime.timedelta(weeks=i)) for i in range(4)]
+    # Collect next 4 weeks
+    week_starts = [start_of_week + datetime.timedelta(weeks=i) for i in range(4)]
 
+    # Prepare data structure
+    weeks_data = {}
     for ws in week_starts:
         week_key = ws.strftime("%Y-%m-%d")
         weeks_data[week_key] = {}
         for emp in EMPLOYEES.keys():
             weeks_data[week_key][emp] = {d: [] for d in ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]}
-            weeks_data[week_key][emp]["Total"] = {"hours": 0, "gross": 0, "net": 0}
+            weeks_data[week_key][emp]["Total"] = {"hours": 0, "gross": 0, "tax": 0, "net": 0}
 
     for username, clock_in, clock_out, hours, wage in raw_logs:
         if not clock_in:
             continue
         in_dt = datetime.datetime.fromisoformat(clock_in).astimezone(CENTRAL_TZ)
 
-        # Determine which week this entry belongs to
         for ws in week_starts:
             we = ws + datetime.timedelta(days=7)
             if ws <= in_dt < we:
                 week_key = ws.strftime("%Y-%m-%d")
                 day = in_dt.strftime("%A")
-
                 entry = {
                     "time": f"{in_dt.strftime('%I:%M %p')} - {datetime.datetime.fromisoformat(clock_out).astimezone(CENTRAL_TZ).strftime('%I:%M %p') if clock_out else '-'}",
                     "hours": round(hours, 2) if hours else 0,
                     "gross": round(wage, 2) if wage else 0
                 }
-
                 weeks_data[week_key][username][day].append(entry)
                 weeks_data[week_key][username]["Total"]["hours"] += entry["hours"]
                 weeks_data[week_key][username]["Total"]["gross"] += entry["gross"]
                 break
 
-    # Compute net
+    # Compute net and taxes
     for wk, employees in weeks_data.items():
         for emp in employees:
             total_gross = employees[emp]["Total"]["gross"]
             employees[emp]["Total"]["gross"] = round(total_gross, 2)
             employees[emp]["Total"]["hours"] = round(employees[emp]["Total"]["hours"], 2)
-            employees[emp]["Total"]["net"] = round(max(total_gross - TAX_FLAT, 0), 2)
+            employees[emp]["Total"]["tax"] = TAX_FLAT if total_gross > 0 else 0
+            employees[emp]["Total"]["net"] = round(max(total_gross - employees[emp]["Total"]["tax"], 0), 2)
 
     return render_template("admin.html", weeks_data=weeks_data,
                            days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"])
 
 # --- Reset database with PIN ---
-RESET_PIN = "2003"  # <-- you can change this
+RESET_PIN = "2003"
 
 @app.route("/reset", methods=["POST"])
 def reset_db():
@@ -283,4 +271,3 @@ if __name__ == "__main__":
     init_db()
     seed_users()
     app.run(debug=True)
-
