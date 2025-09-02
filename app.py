@@ -7,7 +7,7 @@ import pandas as pd
 import io
 
 app = Flask(__name__)
-app.secret_key = "shoals_drywall"
+app.secret_key = "shoals_drywalls"
 
 # Fixed employees with hourly rates and passwords
 EMPLOYEES = {
