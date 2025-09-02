@@ -19,13 +19,11 @@ def get_db_connection():
 
 # Fixed employees with hourly rates and passwords
 EMPLOYEES = {
-    "Alexander Merida": {"rate": 22, "password": "alex123"},
-    "Kevin": {"rate": 18, "password": "kevin123"},
-    "Eddy": {"rate": 18, "password": "eddy123"},
-    "Bocho": {"rate": 18, "password": "bocho123"},
-    "Marvin": {"rate": 18, "password": "marvin123"},
-    "Zacarias": {"rate": 18, "password": "zacarias123"},
-    "Daniella Del Valle": {"rate": 17, "password": "daniella123"},
+    "Alex": {"rate": 22, "password": "Merida23"},
+    "Kevin": {"rate": 18, "password": "Kelos45"},
+    "Eddy": {"rate": 18, "password": "Ydd00!"},
+    "Bocho": {"rate": 18, "password": "Hero299"},
+    "Daniella": {"rate": 17, "password": "Valle1999"},
 }
 
 # Central Time zone (Alabama)
