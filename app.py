@@ -1,13 +1,21 @@
 from flask import Flask, render_template, request, redirect, session, url_for, send_file
-import sqlite3
+import psycopg2
 import datetime
 import pytz
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 import io
+import os
 
 app = Flask(__name__)
 app.secret_key = "shoals_drywalls"
+
+# PostgreSQL connection (use full host from Render dashboard)
+DB_URL = "postgresql://sddata_user:cojDN21iqaIpkEsmrGvN68QTpWwh5v3L@dpg-d2rdf0gdl3ps73d1etbg-a.oregon-postgres.render.com/sddata"
+
+
+def get_db_connection():
+    return psycopg2.connect(DB_URL)
 
 # Fixed employees with hourly rates and passwords
 EMPLOYEES = {
@@ -26,39 +34,53 @@ TAX_FLAT = 20  # Flat tax per week
 
 # --- Database setup ---
 def init_db():
-    conn = sqlite3.connect("payroll.db")
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users
-                 (id INTEGER PRIMARY KEY,
-                  username TEXT UNIQUE,
-                  password TEXT,
-                  role TEXT DEFAULT "employee")''')
-    c.execute('''CREATE TABLE IF NOT EXISTS work_sessions
-                 (id INTEGER PRIMARY KEY,
-                  user_id INTEGER,
-                  clock_in TEXT,
-                  clock_out TEXT,
-                  hours REAL,
-                  wage REAL)''')
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute('''CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE,
+        password TEXT,
+        role TEXT DEFAULT 'employee'
+    )''')
+
+    cur.execute('''CREATE TABLE IF NOT EXISTS work_sessions (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        clock_in TEXT,
+        clock_out TEXT,
+        hours REAL,
+        wage REAL
+    )''')
+
     conn.commit()
+    cur.close()
     conn.close()
 
 # --- Seed admin and employees ---
 def seed_users():
-    conn = sqlite3.connect("payroll.db")
-    c = conn.cursor()
+    conn = get_db_connection()
+    cur = conn.cursor()
+
     # Admin
-    c.execute("SELECT id FROM users WHERE username=?", ("admin",))
-    if not c.fetchone():
-        c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-                  ("admin", generate_password_hash("admin123"), "admin"))
+    cur.execute("SELECT id FROM users WHERE username=%s", ("admin",))
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO users (username, password, role) VALUES (%s, %s, %s)",
+            ("admin", generate_password_hash("admin123"), "admin")
+        )
+
     # Employees
     for username, info in EMPLOYEES.items():
-        c.execute("SELECT id FROM users WHERE username=?", (username,))
-        if not c.fetchone():
-            c.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-                      (username, generate_password_hash(info["password"]), "employee"))
+        cur.execute("SELECT id FROM users WHERE username=%s", (username,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO users (username, password, role) VALUES (%s, %s, %s)",
+                (username, generate_password_hash(info["password"]), "employee")
+            )
+
     conn.commit()
+    cur.close()
     conn.close()
 
 # --- Format session ---
@@ -75,7 +97,7 @@ def format_session(clock_in, clock_out, hours, wage):
 
     hours = round(hours, 2) if hours else 0
     gross_pay = round(wage, 2) if wage else 0
-    net_pay = round(max(gross_pay - TAX_FLAT, 0), 2)
+
 
     return {
         "day": day,
@@ -83,7 +105,6 @@ def format_session(clock_in, clock_out, hours, wage):
         "clock_out": clock_out_str,
         "hours": hours,
         "gross_pay": gross_pay,
-        "tax": TAX_FLAT if gross_pay else 0,
         "net_pay": net_pay
     }
 
@@ -93,10 +114,11 @@ def login():
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
-        conn = sqlite3.connect("payroll.db")
-        c = conn.cursor()
-        c.execute("SELECT id, password, role FROM users WHERE username=?", (username,))
-        user = c.fetchone()
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT id, password, role FROM users WHERE username=%s", (username,))
+        user = cur.fetchone()
+        cur.close()
         conn.close()
         if user and check_password_hash(user[1], password):
             session["user_id"] = user[0]
@@ -120,31 +142,42 @@ def index():
 
     if request.method == "POST":
         action = request.form["action"]
-        conn = sqlite3.connect("payroll.db")
-        c = conn.cursor()
+        conn = get_db_connection()
+        cur = conn.cursor()
         if action == "Clock In":
-            c.execute("INSERT INTO work_sessions (user_id, clock_in) VALUES (?, ?)",
-                      (user_id, datetime.datetime.now(datetime.timezone.utc).isoformat()))
+            cur.execute(
+                "INSERT INTO work_sessions (user_id, clock_in) VALUES (%s, %s)",
+                (user_id, datetime.datetime.now(datetime.timezone.utc).isoformat())
+            )
         elif action == "Clock Out":
-            c.execute("SELECT id, clock_in FROM work_sessions WHERE user_id=? AND clock_out IS NULL",
-                      (user_id,))
-            row = c.fetchone()
+            cur.execute(
+                "SELECT id, clock_in FROM work_sessions WHERE user_id=%s AND clock_out IS NULL",
+                (user_id,)
+            )
+            row = cur.fetchone()
             if row:
                 start_time = datetime.datetime.fromisoformat(row[1])
                 end_time = datetime.datetime.now(datetime.timezone.utc)
                 hours = (end_time - start_time).total_seconds() / 3600
                 rate = EMPLOYEES.get(session["username"], {}).get("rate", 15)
                 wage = hours * rate
-                c.execute("UPDATE work_sessions SET clock_out=?, hours=?, wage=? WHERE id=?",
-                          (end_time.isoformat(), hours, wage, row[0]))
+                cur.execute(
+                    "UPDATE work_sessions SET clock_out=%s, hours=%s, wage=%s WHERE id=%s",
+                    (end_time.isoformat(), hours, wage, row[0])
+                )
         conn.commit()
+        cur.close()
         conn.close()
         return redirect("/")
 
-    conn = sqlite3.connect("payroll.db")
-    c = conn.cursor()
-    c.execute("SELECT clock_in, clock_out, hours, wage FROM work_sessions WHERE user_id=?", (user_id,))
-    raw_sessions = c.fetchall()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT clock_in, clock_out, hours, wage FROM work_sessions WHERE user_id=%s",
+        (user_id,)
+    )
+    raw_sessions = cur.fetchall()
+    cur.close()
     conn.close()
     sessions = [format_session(*s) for s in raw_sessions]
 
@@ -156,13 +189,14 @@ def admin_dashboard():
     if "user_id" not in session or session.get("role") != "admin":
         return "Access denied. Admins only.", 403
 
-    conn = sqlite3.connect("payroll.db")
-    c = conn.cursor()
-    c.execute("""SELECT u.username, w.clock_in, w.clock_out, w.hours, w.wage
-                 FROM work_sessions w
-                 JOIN users u ON w.user_id = u.id
-                 ORDER BY w.clock_in ASC""")
-    raw_logs = c.fetchall()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""SELECT u.username, w.clock_in, w.clock_out, w.hours, w.wage
+                   FROM work_sessions w
+                   JOIN users u ON w.user_id = u.id
+                   ORDER BY w.clock_in ASC""")
+    raw_logs = cur.fetchall()
+    cur.close()
     conn.close()
 
     # Determine all weeks forward
@@ -226,10 +260,11 @@ def reset_db():
     if pin != RESET_PIN:
         return "Invalid PIN. Reset denied.", 403
 
-    conn = sqlite3.connect("payroll.db")
-    c = conn.cursor()
-    c.execute("DELETE FROM work_sessions")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM work_sessions")
     conn.commit()
+    cur.close()
     conn.close()
     return redirect(url_for("admin_dashboard"))
 
@@ -238,13 +273,15 @@ def reset_db():
 def export_excel():
     if "user_id" not in session or session.get("role") != "admin":
         return "Access denied. Admins only.", 403
-    conn = sqlite3.connect("payroll.db")
-    c = conn.cursor()
-    c.execute("""SELECT u.username, w.clock_in, w.clock_out, w.hours, w.wage
-                 FROM work_sessions w
-                 JOIN users u ON w.user_id = u.id
-                 ORDER BY w.clock_in DESC""")
-    raw_logs = c.fetchall()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""SELECT u.username, w.clock_in, w.clock_out, w.hours, w.wage
+                   FROM work_sessions w
+                   JOIN users u ON w.user_id = u.id
+                   ORDER BY w.clock_in DESC""")
+    raw_logs = cur.fetchall()
+    cur.close()
     conn.close()
 
     data = []
