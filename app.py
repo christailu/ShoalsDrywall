@@ -71,15 +71,25 @@ def seed_users():
     # Employees
     for username, info in EMPLOYEES.items():
         cur.execute("SELECT id FROM users WHERE username=%s", (username,))
-        if not cur.fetchone():
+        row = cur.fetchone()
+        hashed_pw = generate_password_hash(info["password"])
+        if not row:
+            # Insert if missing
             cur.execute(
                 "INSERT INTO users (username, password, role) VALUES (%s, %s, %s)",
-                (username, generate_password_hash(info["password"]), "employee")
+                (username, hashed_pw, "employee")
+            )
+        else:
+            # Always update password to match EMPLOYEES dict
+            cur.execute(
+                "UPDATE users SET password=%s WHERE username=%s",
+                (hashed_pw, username)
             )
 
     conn.commit()
     cur.close()
     conn.close()
+
 
 # --- Format session ---
 def format_session(clock_in, clock_out, hours, wage):
