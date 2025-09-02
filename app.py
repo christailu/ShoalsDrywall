@@ -104,8 +104,7 @@ def format_session(clock_in, clock_out, hours, wage):
         "clock_in": clock_in_str,
         "clock_out": clock_out_str,
         "hours": hours,
-        "gross_pay": gross_pay,
-        "net_pay": net_pay
+        "gross_pay": gross_pay
     }
 
 # --- Login ---
