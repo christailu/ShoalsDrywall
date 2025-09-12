@@ -12,6 +12,12 @@
 <body class="container py-4">
     <h2 class="mb-4">Admin Dashboard</h2>
 
+    <!-- Navigation buttons for week selection -->
+    <form method="POST" action="{{ url_for('admin_dashboard') }}" class="d-flex gap-2 mb-3">
+        <button type="submit" name="week_nav" value="prev" class="btn btn-outline-primary">← Prev Week</button>
+        <button type="submit" name="week_nav" value="next" class="btn btn-outline-primary">Next Week →</button>
+    </form>
+
     <a href="{{ url_for('export_excel') }}" class="btn btn-primary mb-3">Export to Excel</a>
 
     <form method="POST" action="{{ url_for('reset_db') }}"
@@ -23,14 +29,14 @@
         </div>
     </form>
 
-    {% for week, data in weeks_data.items() %}
-    <h4 class="mt-4">Week of {{ week }}</h4>
+    <!-- Show ONLY selected week -->
+    <h4 class="mt-4">Week of {{ selected_week }}</h4>
     <div class="table-responsive">
         <table class="table table-bordered table-sm text-center align-middle">
             <thead class="table-light">
                 <tr>
                     <th>Employee</th>
-                    {% for day in days %}
+                    {% for day in ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"] %}
                         <th>{{ day[:3] }}</th>
                     {% endfor %}
                     <th>Total Hours</th>
@@ -42,10 +48,10 @@
                 {% set week_hours = 0 %}
                 {% set week_gross = 0 %}
                 {% set week_net = 0 %}
-                {% for employee, days_data in data.items() %}
+                {% for employee, days_data in weeks_data[selected_week].items() %}
                 <tr>
                     <td><strong>{{ employee }}</strong></td>
-                    {% for day in days %}
+                    {% for day in ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"] %}
                         <td>
                             {% if days_data[day] %}
                                 {% for entry in days_data[day] %}
@@ -70,7 +76,7 @@
                 <!-- Grand total for the week -->
                 <tr class="table-secondary fw-bold">
                     <td>Week Total</td>
-                    {% for day in days %}
+                    {% for day in ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"] %}
                         <td>-</td>
                     {% endfor %}
                     <td>{{ week_hours }}</td>
@@ -80,8 +86,6 @@
             </tbody>
         </table>
     </div>
-{% endfor %}
-
 
     <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary mt-3">Logout</a>
 </body>
