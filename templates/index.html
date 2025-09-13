@@ -4,27 +4,28 @@
     <title>Employee Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="manifest" href="/static/manifest.json">
-    <meta name="theme-color" content="#317EFB">
-    <script>
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker
-          .register("/static/service-worker.js")
-          .then(() => console.log("Service Worker Registered"));
-      }
-    </script>
 </head>
 <body class="container py-4">
     <h2 class="mb-4">Welcome, {{ username }}!</h2>
 
+    <p><strong>Status:</strong> {{ status }}</p>
+
     <form method="POST" class="mb-3 d-flex gap-2">
-        <button name="action" value="Clock In" class="btn btn-success flex-fill">Clock In</button>
-        <button name="action" value="Clock Out" class="btn btn-danger flex-fill">Clock Out</button>
+        <button name="action" value="Clock In" class="btn btn-success flex-fill"
+            {% if status.startswith('Clocked in') %}disabled{% endif %}>
+            Clock In
+        </button>
+        <button name="action" value="Clock Out" class="btn btn-danger flex-fill"
+            {% if status == 'Currently not clocked in.' %}disabled{% endif %}>
+            Clock Out
+        </button>
     </form>
-<form method="POST" class="mb-3 d-flex gap-2">
-    <button name="week_nav" value="prev" class="btn btn-outline-primary">Previous Week</button>
-    <button name="week_nav" value="next" class="btn btn-outline-primary">Next Week</button>
-</form>
+
+    <form method="POST" class="mb-3 d-flex gap-2">
+        <button name="week_nav" value="prev" class="btn btn-outline-primary">Previous Week</button>
+        <button name="week_nav" value="next" class="btn btn-outline-primary">Next Week</button>
+    </form>
+
     <h4>Your Work Sessions</h4>
     <div class="table-responsive">
         <table class="table table-bordered table-sm">
@@ -62,6 +63,7 @@
     <p><a href="{{ url_for('logout') }}" class="btn btn-outline-secondary mt-3">Logout</a></p>
 </body>
 </html>
+
 
 
 

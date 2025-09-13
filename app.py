@@ -119,17 +119,18 @@ def login():
     return render_template("login.html")
 
 # --- Home / Employee dashboard ---
-# --- Home / Employee dashboard ---
 @app.route("/", methods=["GET", "POST"])
 def index():
     if "user_id" not in session:
         return redirect(url_for("login"))
 
-    # --- if admin, redirect to admin dashboard ---
     if session.get("role") == "admin":
         return redirect(url_for("admin_dashboard"))
 
-    # --- Employee dashboard logic below ---
+    user_id = session["user_id"]
+    username = session["username"]
+
+    # --- Employee dashboard week selection ---
     if "selected_week" not in session:
         now = datetime.datetime.now(CENTRAL_TZ)
         days_since_saturday = (now.weekday() - 5) % 7
@@ -137,41 +138,75 @@ def index():
             hour=0, minute=0, second=0, microsecond=0
         )
         session["selected_week"] = start_week.date().isoformat()
-    else:
-        try:
-            _ = datetime.date.fromisoformat(session["selected_week"])
-        except ValueError:
-            try:
-                dt = datetime.datetime.strptime(
-                    session["selected_week"], "%a, %d %b %Y %H:%M:%S %Z"
-                )
-                session["selected_week"] = dt.date().isoformat()
-            except Exception:
-                now = datetime.datetime.now(CENTRAL_TZ)
-                days_since_saturday = (now.weekday() - 5) % 7
-                start_week = (now - datetime.timedelta(days=days_since_saturday)).replace(
-                    hour=0, minute=0, second=0, microsecond=0
-                )
-                session["selected_week"] = start_week.date().isoformat()
 
-    if request.method == "POST" and "week_nav" in request.form:
-        current = datetime.date.fromisoformat(session["selected_week"])
-        if request.form["week_nav"] == "prev":
-            session["selected_week"] = (current - datetime.timedelta(days=7)).isoformat()
-        elif request.form["week_nav"] == "next":
-            session["selected_week"] = (current + datetime.timedelta(days=7)).isoformat()
-        return redirect(url_for("index"))
+    # --- Handle POST actions ---
+    if request.method == "POST":
+        if "week_nav" in request.form:
+            current = datetime.date.fromisoformat(session["selected_week"])
+            if request.form["week_nav"] == "prev":
+                session["selected_week"] = (current - datetime.timedelta(days=7)).isoformat()
+            elif request.form["week_nav"] == "next":
+                session["selected_week"] = (current + datetime.timedelta(days=7)).isoformat()
+            return redirect(url_for("index"))
 
+        elif "action" in request.form:
+            action = request.form["action"]
+            conn = get_db_connection()
+            cur = conn.cursor()
+
+            if action == "Clock In":
+                # Only allow clock in if not already clocked in
+                cur.execute("SELECT clock_out FROM work_sessions WHERE user_id=%s ORDER BY clock_in DESC LIMIT 1", (user_id,))
+                last = cur.fetchone()
+                if not last or last[0] is not None:
+                    now_iso = datetime.datetime.now(CENTRAL_TZ).isoformat()
+                    cur.execute(
+                        "INSERT INTO work_sessions (user_id, clock_in) VALUES (%s, %s)",
+                        (user_id, now_iso)
+                    )
+
+            elif action == "Clock Out":
+                # Only allow clock out if currently clocked in
+                cur.execute("SELECT id, clock_in, clock_out FROM work_sessions WHERE user_id=%s ORDER BY clock_in DESC LIMIT 1", (user_id,))
+                last = cur.fetchone()
+                if last and last[2] is None:
+                    now_dt = datetime.datetime.now(CENTRAL_TZ)
+                    clock_in_dt = datetime.datetime.fromisoformat(last[1])
+                    hours = (now_dt - clock_in_dt).total_seconds() / 3600
+                    wage = hours * EMPLOYEES[username]["rate"]
+                    cur.execute(
+                        "UPDATE work_sessions SET clock_out=%s, hours=%s, wage=%s WHERE id=%s",
+                        (now_dt.isoformat(), hours, wage, last[0])
+                    )
+            conn.commit()
+            cur.close()
+            conn.close()
+            return redirect(url_for("index"))
+
+    # --- Fetch sessions ---
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute(
         "SELECT clock_in, clock_out, hours, wage FROM work_sessions WHERE user_id=%s ORDER BY clock_in ASC",
-        (session["user_id"],)
+        (user_id,)
     )
     raw_sessions = cur.fetchall()
+
+    cur.execute(
+        "SELECT clock_in, clock_out FROM work_sessions WHERE user_id=%s ORDER BY clock_in DESC LIMIT 1",
+        (user_id,)
+    )
+    last_session = cur.fetchone()
     cur.close()
     conn.close()
 
+    if last_session and last_session[1] is None:
+        clock_in_dt = datetime.datetime.fromisoformat(last_session[0]).astimezone(CENTRAL_TZ)
+        status = f"Clocked in since {clock_in_dt.strftime('%I:%M %p on %m/%d/%Y')}"
+    else:
+        status = "Currently not clocked in."
+
+    # --- Filter sessions for selected week ---
     selected_start = datetime.datetime.combine(
         datetime.date.fromisoformat(session["selected_week"]),
         datetime.time.min
@@ -187,7 +222,13 @@ def index():
             continue
         in_dt = datetime.datetime.fromisoformat(clock_in).astimezone(CENTRAL_TZ)
         if selected_start <= in_dt < selected_end:
-            sessions.append(format_session(clock_in, clock_out, hours, wage))
+            sessions.append({
+                "day": in_dt.strftime("%A"),
+                "clock_in": in_dt.strftime("%I:%M %p on %m/%d/%Y"),
+                "clock_out": datetime.datetime.fromisoformat(clock_out).astimezone(CENTRAL_TZ).strftime("%I:%M %p on %m/%d/%Y") if clock_out else "-",
+                "hours": round(hours, 2) if hours else 0,
+                "wage": round(wage, 2) if wage else 0
+            })
             weekly_hours += hours if hours else 0
             weekly_gross += wage if wage else 0
 
@@ -196,10 +237,13 @@ def index():
     return render_template(
         "index.html",
         sessions=sessions,
-        username=session["username"],
+        username=username,
         weekly_net=round(weekly_net, 2),
-        tax_info="Este dinero es lo que recibirá al final de la semana. El impuesto se resta solo al final de la semana, no cada día."
+        tax_info="Este dinero es lo que recibirá al final de la semana. El impuesto se resta solo al final de la semana, no cada día.",
+        status=status
     )
+
+
 
 # --- Admin dashboard ---
 @app.route("/admin", methods=["GET", "POST"])
@@ -357,7 +401,7 @@ def logout():
 
 
 # --- Reset DB ---
-RESET_PIN = "2003"
+RESET_PIN = "2025"
 @app.route("/reset", methods=["POST"])
 def reset_db():
     if "user_id" not in session or session.get("role") != "admin":
