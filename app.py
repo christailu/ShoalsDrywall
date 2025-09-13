@@ -201,7 +201,6 @@ def index():
         tax_info="Este dinero es lo que recibirá al final de la semana. El impuesto se resta solo al final de la semana, no cada día."
     )
 
-
 # --- Admin dashboard ---
 @app.route("/admin", methods=["GET", "POST"])
 def admin_dashboard():
@@ -210,13 +209,11 @@ def admin_dashboard():
 
     # --- Handle week navigation ---
     if "selected_week" not in session:
-        # Align to Saturday (previous Saturday as start of current week)
         now = datetime.datetime.now(CENTRAL_TZ)
         days_since_saturday = (now.weekday() - 5) % 7
         start_week = (now - datetime.timedelta(days=days_since_saturday)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        # store ISO date string in session
         session["selected_week"] = start_week.date().isoformat()
 
     if request.method == "POST" and "week_nav" in request.form:
@@ -271,18 +268,31 @@ def admin_dashboard():
             weeks_data[week_key][username]["Total"]["hours"] += entry["hours"]
             weeks_data[week_key][username]["Total"]["gross"] += entry["gross"]
 
-    # --- Compute totals ---
+    # --- Compute per-employee totals + accumulate into Week Total ---
+    week_total = {"hours": 0, "gross": 0, "tax": 0, "net": 0}
+
     for emp in weeks_data[week_key]:
         total_gross = weeks_data[week_key][emp]["Total"]["gross"]
-        weeks_data[week_key][emp]["Total"]["hours"] = round(weeks_data[week_key][emp]["Total"]["hours"], 2)
+        total_hours = weeks_data[week_key][emp]["Total"]["hours"]
+
+        weeks_data[week_key][emp]["Total"]["hours"] = round(total_hours, 2)
         weeks_data[week_key][emp]["Total"]["gross"] = round(total_gross, 2)
         weeks_data[week_key][emp]["Total"]["tax"] = TAX_FLAT if total_gross > 0 else 0
-        weeks_data[week_key][emp]["Total"]["net"] = round(max(total_gross - weeks_data[week_key][emp]["Total"]["tax"], 0), 2)
+        weeks_data[week_key][emp]["Total"]["net"] = round(
+            max(total_gross - weeks_data[week_key][emp]["Total"]["tax"], 0), 2
+        )
+
+        # accumulate into Week Total
+        week_total["hours"] += weeks_data[week_key][emp]["Total"]["hours"]
+        week_total["gross"] += weeks_data[week_key][emp]["Total"]["gross"]
+        week_total["tax"] += weeks_data[week_key][emp]["Total"]["tax"]
+        week_total["net"] += weeks_data[week_key][emp]["Total"]["net"]
 
     return render_template(
         "admin.html",
         weeks_data=weeks_data,
         selected_week=week_key,
+        week_total=week_total   # pass week total separately
     )
 
 

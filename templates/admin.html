@@ -45,9 +45,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% set week_hours = 0 %}
-                {% set week_gross = 0 %}
-                {% set week_net = 0 %}
+                {% set totals = namespace(hours=0, gross=0, net=0) %}
                 {% for employee, days_data in weeks_data[selected_week].items() %}
                 <tr>
                     <td><strong>{{ employee }}</strong></td>
@@ -68,20 +66,20 @@
                     <td>${{ days_data["Total"].gross }}</td>
                     <td>${{ days_data["Total"].net }}</td>
 
-                    {% set week_hours = week_hours + days_data["Total"].hours %}
-                    {% set week_gross = week_gross + days_data["Total"].gross %}
-                    {% set week_net = week_net + days_data["Total"].net %}
+                    {% set totals.hours = totals.hours + days_data["Total"].hours %}
+                    {% set totals.gross = totals.gross + days_data["Total"].gross %}
+                    {% set totals.net = totals.net + days_data["Total"].net %}
                 </tr>
                 {% endfor %}
-                <!-- Grand total for the week -->
+                <!-- Only ONE grand total row now -->
                 <tr class="table-secondary fw-bold">
                     <td>Week Total</td>
                     {% for day in ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"] %}
                         <td>-</td>
                     {% endfor %}
-                    <td>{{ week_hours }}</td>
-                    <td>${{ week_gross }}</td>
-                    <td>${{ week_net }}</td>
+                    <td>{{ totals.hours }}</td>
+                    <td>${{ totals.gross }}</td>
+                    <td>${{ totals.net }}</td>
                 </tr>
             </tbody>
         </table>
