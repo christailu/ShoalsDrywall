@@ -417,6 +417,11 @@ def reset_db():
     conn.close()
     return redirect(url_for("admin_dashboard"))
 
+@app.route("/safety")
+def safety():
+    return render_template("safety.html")
+
+
 # --- Main ---
 if __name__ == "__main__":
     init_db()
