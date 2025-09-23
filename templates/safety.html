@@ -8,23 +8,71 @@
 <body class="container py-4">
     <h2 class="mb-4">OSHA Safety Training</h2>
 
+    <!-- Video Section -->
     <div class="mb-4">
         <h5>Fall Protection Training</h5>
-        <iframe width="560" height="315" src="https://www.youtube.com/embed/UGmfaRjAx8w"
+        <iframe class="w-100" style="max-width:560px; height:315px;"
+                src="https://www.youtube.com/embed/UGmfaRjAx8w"
                 title="Fall Protection" frameborder="0" allowfullscreen></iframe>
     </div>
 
     <div class="mb-4">
         <h5>Hazard Communication</h5>
-        <iframe width="560" height="315" src="https://www.youtube.com/embed/qxrk4jceV3M"
+        <iframe class="w-100" style="max-width:560px; height:315px;"
+                src="https://www.youtube.com/embed/qxrk4jceV3M"
                 title="Hazard Communication" frameborder="0" allowfullscreen></iframe>
     </div>
 
     <div class="mb-4">
         <h5>Scaffold Safety</h5>
-        <iframe width="560" height="315" src="https://www.youtube.com/embed/Bp7P09OANlI"
+        <iframe class="w-100" style="max-width:560px; height:315px;"
+                src="https://www.youtube.com/embed/Bp7P09OANlI"
                 title="Scaffold Safety" frameborder="0" allowfullscreen></iframe>
     </div>
+
+    <!-- PDF Section -->
+    <h3 class="mt-5">OSHA Safety Documents</h3>
+    <ul class="list-group mb-4">
+        <li class="list-group-item">
+            <a href="{{ url_for('static', filename='pdfs/Scaffolds.pdf') }}" target="_blank">
+                📄 Constructions Scaffolds (PDF)
+            </a>
+        </li>
+        <li class="list-group-item">
+            <a href="{{ url_for('static', filename='pdfs/HealthHazards.pdf') }}" target="_blank">
+                📄 Health Hazards (PDF)
+            </a>
+        </li>
+        <li class="list-group-item">
+            <a href="{{ url_for('static', filename='pdfs/ConstructionMaterials.pdf') }}" target="_blank">
+                📄 Construction Materials (PDF)
+            </a>
+        </li>
+
+        <li class="list-group-item">
+            <a href="{{ url_for('static', filename='pdfs/Workersafety.pdf') }}" target="_blank">
+                📄 Worker Safety (PDF)
+            </a>
+        </li>
+
+        <li class="list-group-item">
+            <a href="{{ url_for('static', filename='pdfs/ConstructionTool.pdf') }}" target="_blank">
+                📄 Construction Tools (PDF)
+            </a>
+        </li>
+
+        <li class="list-group-item">
+            <a href="{{ url_for('static', filename='pdfs/ConstructionStairways.pdf') }}" target="_blank">
+                📄 Construction Stairways(PDF)
+            </a>
+        </li>
+
+                <li class="list-group-item">
+            <a href="{{ url_for('static', filename='pdfs/personalprotective.pdf') }}" target="_blank">
+                📄 Personal Protective (PDF)
+            </a>
+        </li>
+    </ul>
 
     <p><a href="{{ url_for('index') }}" class="btn btn-outline-secondary mt-3">Back to Dashboard</a></p>
 </body>
