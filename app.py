@@ -35,24 +35,43 @@ TAX_FLAT = 20  # Flat tax per week
 def init_db():
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('''CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username TEXT UNIQUE,
-        password TEXT,
-        role TEXT DEFAULT 'employee'
-    )''')
-    cur.execute('''CREATE TABLE IF NOT EXISTS work_sessions (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        clock_in TEXT,
-        clock_out TEXT,
-        hours REAL,
-        wage REAL
-    )''')
-    conn.commit()
 
+    # Users table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE,
+            password TEXT,
+            role TEXT DEFAULT 'employee'
+        )
+    ''')
+
+    # Work sessions table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS work_sessions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+            clock_in TEXT,
+            clock_out TEXT,
+            hours REAL,
+            wage REAL
+        )
+    ''')
+
+    # --- NEW: Documents table ---
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS documents (
+            id SERIAL PRIMARY KEY,
+            filename TEXT NOT NULL,
+            folder TEXT NOT NULL,
+            content BYTEA NOT NULL
+        )
+    ''')
+
+    conn.commit()
     cur.close()
     conn.close()
+
 
 # --- Seed users and update passwords if changed ---
 def seed_users():
@@ -273,26 +292,8 @@ def admin_dashboard():
             session["selected_week"] = (current + datetime.timedelta(days=7)).isoformat()
         return redirect(url_for("admin_dashboard"))
 
-    # --- Load all logs ---
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""SELECT u.username, w.clock_in, w.clock_out, w.hours, w.wage
-                   FROM work_sessions w
-                   JOIN users u ON w.user_id = u.id
-                   ORDER BY w.clock_in ASC""")
-    raw_logs = cur.fetchall()
-    cur.close()
-    conn.close()
+    week_key = datetime.date.fromisoformat(session["selected_week"]).strftime("%Y-%m-%d")
 
-    # --- Determine week start and end ---
-    selected_start = datetime.datetime.combine(
-        datetime.date.fromisoformat(session["selected_week"]),
-        datetime.time.min
-    ).astimezone(CENTRAL_TZ)
-    selected_end = selected_start + datetime.timedelta(days=7)
-
-    # Prepare container
-    week_key = selected_start.strftime("%Y-%m-%d")
     weeks_data = {
         week_key: {
             emp: {d: [] for d in ["Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday"]}
@@ -301,7 +302,40 @@ def admin_dashboard():
         }
     }
 
-    # --- Fill with sessions ---
+    # --- Handle uploads and fetch data safely ---
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            # Handle file upload
+            if request.method == "POST" and "upload" in request.form:
+                folder = request.form['folder']
+                file = request.files['file']
+                content = file.read()
+                cur.execute(
+                    "INSERT INTO documents (filename, folder, content) VALUES (%s,%s,%s)",
+                    (file.filename, folder, psycopg2.Binary(content))
+                )
+                conn.commit()
+
+            # Fetch all work sessions
+            cur.execute("""
+                SELECT u.username, w.clock_in, w.clock_out, w.hours, w.wage
+                FROM work_sessions w
+                JOIN users u ON w.user_id = u.id
+                ORDER BY w.clock_in ASC
+            """)
+            raw_logs = cur.fetchall()
+
+            # Fetch documents
+            cur.execute("SELECT id, filename, folder FROM documents ORDER BY id DESC")
+            docs = cur.fetchall()
+
+    # --- Fill week data ---
+    selected_start = datetime.datetime.combine(
+        datetime.date.fromisoformat(session["selected_week"]),
+        datetime.time.min
+    ).astimezone(CENTRAL_TZ)
+    selected_end = selected_start + datetime.timedelta(days=7)
+
     for username, clock_in, clock_out, hours, wage in raw_logs:
         if not clock_in:
             continue
@@ -317,9 +351,8 @@ def admin_dashboard():
             weeks_data[week_key][username]["Total"]["hours"] += entry["hours"]
             weeks_data[week_key][username]["Total"]["gross"] += entry["gross"]
 
-    # --- Compute per-employee totals + accumulate into Week Total ---
+    # --- Compute totals ---
     week_total = {"hours": 0, "gross": 0, "tax": 0, "net": 0}
-
     for emp in weeks_data[week_key]:
         total_gross = weeks_data[week_key][emp]["Total"]["gross"]
         total_hours = weeks_data[week_key][emp]["Total"]["hours"]
@@ -331,18 +364,25 @@ def admin_dashboard():
             max(total_gross - weeks_data[week_key][emp]["Total"]["tax"], 0), 2
         )
 
-        # accumulate into Week Total
         week_total["hours"] += weeks_data[week_key][emp]["Total"]["hours"]
         week_total["gross"] += weeks_data[week_key][emp]["Total"]["gross"]
         week_total["tax"] += weeks_data[week_key][emp]["Total"]["tax"]
         week_total["net"] += weeks_data[week_key][emp]["Total"]["net"]
 
+    # --- Organize documents by folder ---
+    folders = {}
+    for doc_id, filename, folder in docs:
+        if folder not in folders:
+            folders[folder] = []
+        folders[folder].append({"id": doc_id, "filename": filename})
+
     return render_template(
         "admin.html",
         weeks_data=weeks_data,
         selected_week=week_key,
-        week_total=week_total,   # pass week total separately
-        os = os,
+        week_total=week_total,
+        folders=folders,
+        os=os
     )
 
 
@@ -433,35 +473,74 @@ def safety():
 
 UPLOAD_FOLDER = os.path.join('static', 'uploads')
 
-@app.route('/upload_document', methods=['POST'])
+@app.route("/upload_document", methods=["GET", "POST"])
 def upload_document():
-    folder = request.form['folder']
-    file = request.files['file']
+    # Only admin can upload
+    if "user_id" not in session or session.get("role") != "admin":
+        return "Access denied. Admins only.", 403
 
-    folder_path = os.path.join(UPLOAD_FOLDER, folder)
-    os.makedirs(folder_path, exist_ok=True)
+    if request.method == "POST":
+        file = request.files.get("file")
+        folder = request.form.get("folder", "General")  # Default folder if none provided
 
-    file.save(os.path.join(folder_path, file.filename))
-    return redirect(url_for('admin_dashboard'))
+        if not file:
+            return "No file selected", 400
 
-@app.route('/get_documents/<folder>')
-def get_documents(folder):
-    folder_path = os.path.join(UPLOAD_FOLDER, folder)
-    if not os.path.exists(folder_path):
-        return jsonify([])
-    return jsonify(os.listdir(folder_path))
+        # Save file content in DB
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO documents (filename, folder, content) VALUES (%s, %s, %s)",
+            (file.filename, folder, psycopg2.Binary(file.read()))
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
 
-@app.route('/view_document/<folder>/<filename>')
-def view_document(folder, filename):
-    return send_from_directory(os.path.join(UPLOAD_FOLDER, folder), filename)
+        return redirect(url_for("admin_dashboard"))
 
-@app.route('/delete_document/<folder>/<filename>', methods=['DELETE'])
-def delete_document(folder, filename):
-    file_path = os.path.join(UPLOAD_FOLDER, folder, filename)
-    if os.path.exists(file_path):
-        os.remove(file_path)
-        return '', 204
-    return '', 404
+    # GET request: show a simple upload form
+    return """
+    <h2>Upload Document</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" required><br><br>
+        <input type="text" name="folder" placeholder="Folder name" required><br><br>
+        <button type="submit">Upload</button>
+    </form>
+    <p><a href='/admin'>Back to Admin Dashboard</a></p>
+    """
+
+
+# --- View document ---
+@app.route("/view_document/<int:doc_id>")
+def view_document(doc_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT filename, content FROM documents WHERE id=%s", (doc_id,))
+    doc = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not doc:
+        return "Document not found", 404
+
+    # Auto-detect mimetype
+    return send_file(
+        io.BytesIO(doc[1]),
+        download_name=doc[0]
+    )
+
+
+# --- Delete document ---
+@app.route("/delete_document/<int:doc_id>", methods=["POST"])
+def delete_document(doc_id):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM documents WHERE id=%s", (doc_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "success"})
 
 
 
