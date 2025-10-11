@@ -1,10 +1,14 @@
-from flask import Flask, render_template, request, redirect, session, url_for, send_file
+from flask import Flask, render_template, request, redirect, session, url_for, send_file, send_from_directory, jsonify
 import psycopg2
 import datetime
 import pytz
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 import io
+import os
+
+from werkzeug.utils import secure_filename
+
 
 app = Flask(__name__)
 app.secret_key = "shoals_drywalls"
@@ -46,6 +50,7 @@ def init_db():
         wage REAL
     )''')
     conn.commit()
+
     cur.close()
     conn.close()
 
@@ -336,8 +341,10 @@ def admin_dashboard():
         "admin.html",
         weeks_data=weeks_data,
         selected_week=week_key,
-        week_total=week_total   # pass week total separately
+        week_total=week_total,   # pass week total separately
+        os = os,
     )
+
 
 
 # --- Export Excel (net pay only, weekly) ---
@@ -420,6 +427,42 @@ def reset_db():
 @app.route("/safety")
 def safety():
     return render_template("safety.html")
+
+# --- File Upload Config ---
+
+
+UPLOAD_FOLDER = os.path.join('static', 'uploads')
+
+@app.route('/upload_document', methods=['POST'])
+def upload_document():
+    folder = request.form['folder']
+    file = request.files['file']
+
+    folder_path = os.path.join(UPLOAD_FOLDER, folder)
+    os.makedirs(folder_path, exist_ok=True)
+
+    file.save(os.path.join(folder_path, file.filename))
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/get_documents/<folder>')
+def get_documents(folder):
+    folder_path = os.path.join(UPLOAD_FOLDER, folder)
+    if not os.path.exists(folder_path):
+        return jsonify([])
+    return jsonify(os.listdir(folder_path))
+
+@app.route('/view_document/<folder>/<filename>')
+def view_document(folder, filename):
+    return send_from_directory(os.path.join(UPLOAD_FOLDER, folder), filename)
+
+@app.route('/delete_document/<folder>/<filename>', methods=['DELETE'])
+def delete_document(folder, filename):
+    file_path = os.path.join(UPLOAD_FOLDER, folder, filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return '', 204
+    return '', 404
+
 
 
 # --- Main ---
