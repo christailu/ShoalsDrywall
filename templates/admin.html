@@ -10,12 +10,13 @@
         .table-sm th, .table-sm td { padding: 4px 6px; }
         .hidden { display: none; }
         iframe { width: 100%; height: 80vh; border: none; }
+        #pdfViewer { background: #fff; padding: 10px; border-radius: 8px; }
     </style>
 </head>
 <body class="container py-4">
     <h2 class="mb-4">Admin Dashboard</h2>
 
-    <!-- Navigation buttons for week selection -->
+    <!-- Week navigation -->
     <form method="POST" action="{{ url_for('admin_dashboard') }}" class="d-flex gap-2 mb-3">
         <button type="submit" name="week_nav" value="prev" class="btn btn-outline-primary">← Prev Week</button>
         <button type="submit" name="week_nav" value="next" class="btn btn-outline-primary">Next Week →</button>
@@ -23,6 +24,7 @@
 
     <a href="{{ url_for('export_excel') }}" class="btn btn-primary mb-3">Export to Excel</a>
 
+    <!-- Reset -->
     <form method="POST" action="{{ url_for('reset_db') }}"
           onsubmit="return confirm('Are you sure you want to reset all work hours?');"
           class="mb-4">
@@ -169,7 +171,7 @@
 
             documentList.innerHTML = '';
             if (docs.length === 0) {
-                documentList.innerHTML = '<p>No documents in this folder.</p>';
+                documentList.innerHTML = '<p class="text-muted">No documents in this folder.</p>';
                 return;
             }
 
@@ -187,6 +189,7 @@
                     pdfFrame.src = `/view_document/${folder}/${doc}`;
                     documentList.classList.add('hidden');
                     pdfViewer.classList.remove('hidden');
+                    window.scrollTo(0, 0);
                 };
                 item.querySelector('.deleteDoc').onclick = async () => {
                     if (confirm('Are you sure you want to delete this document?')) {
