@@ -98,6 +98,7 @@ def seed_users():
             )
         else:
             # Update password if changed
+            # row[1] contains the stored hashed password
             if not check_password_hash(row[1], info["password"]):
                 cur.execute("UPDATE users SET password=%s WHERE username=%s", (hashed_pw, username))
 
@@ -237,8 +238,8 @@ def index():
     ).astimezone(CENTRAL_TZ)
     selected_end = selected_start + datetime.timedelta(days=7)
 
-    weekly_hours = 0
-    weekly_gross = 0
+    weekly_hours = 0.0
+    weekly_gross = 0.0
     sessions = []
     for s in raw_sessions:
         clock_in, clock_out, hours, wage = s
@@ -256,13 +257,23 @@ def index():
             weekly_hours += hours if hours else 0
             weekly_gross += wage if wage else 0
 
-    weekly_net = max(weekly_gross - TAX_FLAT if weekly_gross > 0 else 0, 0)
+    # --- NEW: Use whole-number hours for weekly totals on employee dashboard ---
+    weekly_hours_int = int(weekly_hours)  # truncate decimals
+    # Recalculate gross using whole hours
+    if username in EMPLOYEES:
+        weekly_gross_int = weekly_hours_int * EMPLOYEES[username]["rate"]
+    else:
+        weekly_gross_int = int(weekly_gross)  # fallback
+
+    weekly_net = max(weekly_gross_int - TAX_FLAT if weekly_gross_int > 0 else 0, 0)
 
     return render_template(
         "index.html",
         sessions=sessions,
         username=username,
         weekly_net=round(weekly_net, 2),
+        weekly_hours=weekly_hours_int,
+        weekly_gross=round(weekly_gross_int, 2),
         tax_info="Este dinero es lo que recibirá al final de la semana. El impuesto se resta solo al final de la semana, no cada día.",
         status=status
     )
@@ -354,18 +365,26 @@ def admin_dashboard():
     # --- Compute totals ---
     week_total = {"hours": 0, "gross": 0, "tax": 0, "net": 0}
     for emp in weeks_data[week_key]:
-        total_gross = weeks_data[week_key][emp]["Total"]["gross"]
         total_hours = weeks_data[week_key][emp]["Total"]["hours"]
 
-        weeks_data[week_key][emp]["Total"]["hours"] = round(total_hours, 2)
-        weeks_data[week_key][emp]["Total"]["gross"] = round(total_gross, 2)
-        weeks_data[week_key][emp]["Total"]["tax"] = TAX_FLAT if total_gross > 0 else 0
+        # Floor total hours (truncate decimals)
+        total_hours_int = int(total_hours)
+
+        # Recalculate gross pay using whole hours ONLY
+        hourly_rate = EMPLOYEES[emp]["rate"]
+        total_gross_int = total_hours_int * hourly_rate
+
+        # Store updated totals
+        weeks_data[week_key][emp]["Total"]["hours"] = total_hours_int
+        weeks_data[week_key][emp]["Total"]["gross"] = total_gross_int
+        weeks_data[week_key][emp]["Total"]["tax"] = TAX_FLAT if total_gross_int > 0 else 0
         weeks_data[week_key][emp]["Total"]["net"] = round(
-            max(total_gross - weeks_data[week_key][emp]["Total"]["tax"], 0), 2
+            max(total_gross_int - weeks_data[week_key][emp]["Total"]["tax"], 0), 2
         )
 
-        week_total["hours"] += weeks_data[week_key][emp]["Total"]["hours"]
-        week_total["gross"] += weeks_data[week_key][emp]["Total"]["gross"]
+        # Add to weekly totals
+        week_total["hours"] += total_hours_int
+        week_total["gross"] += total_gross_int
         week_total["tax"] += weeks_data[week_key][emp]["Total"]["tax"]
         week_total["net"] += weeks_data[week_key][emp]["Total"]["net"]
 
@@ -424,11 +443,15 @@ def export_excel():
     data = []
     for username, weeks in weekly_data.items():
         for wk, info in weeks.items():
-            net = max(info["gross"] - TAX_FLAT if info["gross"]>0 else 0, 0)
+            # Use whole hours (truncate decimals) and recalculate net based on whole hours * rate
+            hours_int = int(info["hours"])
+            hourly_rate = EMPLOYEES.get(username, {}).get("rate", 0)
+            gross_from_whole_hours = hours_int * hourly_rate
+            net = max(gross_from_whole_hours - TAX_FLAT if gross_from_whole_hours > 0 else 0, 0)
             data.append({
                 "Username": username,
                 "Week Start": wk,
-                "Hours Worked": round(info["hours"],2),
+                "Hours Worked": hours_int,
                 "Net Pay": round(net,2)
             })
 
@@ -549,4 +572,3 @@ if __name__ == "__main__":
     init_db()
     seed_users()
     app.run(debug=True)
-
