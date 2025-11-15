@@ -271,13 +271,13 @@ def index():
         "index.html",
         sessions=sessions,
         username=username,
+        rate=EMPLOYEES[username]["rate"],  # <<< ADD THIS
         weekly_net=round(weekly_net, 2),
         weekly_hours=weekly_hours_int,
         weekly_gross=round(weekly_gross_int, 2),
         tax_info="Este dinero es lo que recibirá al final de la semana. El impuesto se resta solo al final de la semana, no cada día.",
         status=status
     )
-
 
 
 # --- Admin dashboard ---

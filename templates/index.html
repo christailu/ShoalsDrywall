@@ -44,14 +44,20 @@
                     <td>{{ s.day }}</td>
                     <td>{{ s.clock_in }}</td>
                     <td>{{ s.clock_out }}</td>
-                    <td>{{ s.hours }}</td>
-                    <td>${{ s.wage }}</td>
+
+                    <!-- SHOW HOURS AS WHOLE NUMBER -->
+                    <td>{{ s.hours | int }}</td>
+
+                    <!-- WAGE BASED ON WHOLE HOURS -->
+                    <td>${{ (s.hours | int) * rate }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
             <tfoot>
                 <tr class="table-success">
                     <th colspan="4" class="text-end">Weekly Net Pay:</th>
+
+                    <!-- WEEKLY NET ALREADY COMPUTED WITH WHOLE HOURS IN app.py -->
                     <th>${{ weekly_net }}</th>
                 </tr>
             </tfoot>
@@ -65,7 +71,3 @@
 
 </body>
 </html>
-
-
-
-
